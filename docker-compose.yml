@@ -1,0 +1,23 @@
+services:
+  taskport:
+    build: .
+    image: taskport:latest
+    container_name: taskport
+    ports:
+      - "${TASKPORT_PORT:-8000}:8000"
+    # Credenciais e configurações lidas do .env (copie de .env.example).
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3

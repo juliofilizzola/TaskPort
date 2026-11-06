@@ -1,0 +1,473 @@
+{
+  "info": {
+    "name": "TaskPort",
+    "description": "API que importa tarefas de arquivos Markdown para o Trello.\n\nFluxo: **Health** → **Listar quadros** (salva o primeiro quadro em `boardId`) → **Pré-visualizar** → **Importar**.\n\nVariáveis da coleção:\n- `baseUrl`: endereço da API (padrão `http://localhost:8000`).\n- `boardId`: quadro de destino. É preenchido automaticamente por *Listar quadros* se estiver vazio; ajuste para o quadro desejado.\n\nArquivos: os campos `files` apontam para `examples/*.md`. Para isso funcionar, em Settings → General → Working directory, selecione a pasta do projeto TaskPort, ou selecione os arquivos manualmente em cada requisição.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "boardId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Resposta em JSON', () => {",
+          "    pm.response.to.have.header('Content-Type');",
+          "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Verifica se a API está no ar e se as credenciais do Trello (`TRELLO_API_KEY` e `TRELLO_TOKEN`) estão configuradas."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "{",
+              "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "    pm.test('API ok', () => pm.expect(pm.response.json().status).to.eql('ok'));",
+              "    pm.test('Trello configurado', () => pm.expect(pm.response.json().trello_configured).to.be.true);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Listar quadros",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/boards",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "boards"
+          ]
+        },
+        "description": "Quadros abertos da conta Trello autenticada. Se a variável `boardId` estiver vazia, o primeiro quadro é salvo nela."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "{",
+              "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "    const boards = pm.response.json();",
+              "    pm.test('Retorna uma lista', () => pm.expect(boards).to.be.an('array'));",
+              "    if (Array.isArray(boards) && boards.length && !pm.collectionVariables.get('boardId')) {",
+              "        pm.collectionVariables.set('boardId', boards[0].id);",
+              "        console.log(`boardId definido como ${boards[0].id} (${boards[0].name})`);",
+              "    }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pré-visualizar",
+      "item": [
+        {
+          "name": "Pré-visualizar (somente parser)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/jobs-control.md"
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/sem-headings.md"
+                }
+              ]
+            },
+            "description": "Interpreta os arquivos sem acessar o Trello. Útil para conferir listas, cartões, checklists e `warnings`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    const data = pm.response.json();",
+                  "    pm.test('Sem board_id não planeja ações', () => pm.expect(data.summary.cards_to_create).to.be.null);",
+                  "    pm.test('Arquivos processados', () => pm.expect(data.summary.files).to.eql(2));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pré-visualizar no quadro",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/jobs-control.md"
+                },
+                {
+                  "key": "board_id",
+                  "type": "text",
+                  "value": "{{boardId}}"
+                },
+                {
+                  "key": "on_existing",
+                  "type": "text",
+                  "value": "skip",
+                  "description": "skip (padrão) ou update"
+                }
+              ]
+            },
+            "description": "Lê o quadro (sem escrever) e indica em `action` o que será criado, reutilizado, atualizado ou ignorado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    const s = pm.response.json().summary;",
+                  "    pm.test('Plano calculado', () => pm.expect(s.cards_to_create).to.be.a('number'));",
+                  "    console.log(`criar: ${s.cards_to_create} | atualizar: ${s.cards_to_update} | ignorar: ${s.cards_to_skip}`);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pré-visualizar relatório BP Tech",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/relatorio-rede-bptech.md"
+                },
+                {
+                  "key": "board_id",
+                  "type": "text",
+                  "value": "{{boardId}}"
+                },
+                {
+                  "key": "on_existing",
+                  "type": "text",
+                  "value": "update"
+                }
+              ]
+            },
+            "description": "Markdown gerado a partir do relatório de rede com o prompt em `prompts/relatorio-para-tarefas.md`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    const data = pm.response.json();",
+                  "    pm.test('25 achados', () => pm.expect(data.summary.cards).to.eql(25));",
+                  "    pm.test('Sem avisos do parser', () => pm.expect(data.files[0].warnings).to.be.empty);",
+                  "    pm.test('Tudo na lista TODO', () => pm.expect(data.files[0].lists.map(l => l.name)).to.eql(['TODO']));",
+                  "    pm.test('Severidade como etiqueta', () => pm.expect(data.files[0].lists[0].cards.every(c => c.labels.length === 1)).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Importar",
+      "item": [
+        {
+          "name": "Importar tarefas",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/imports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "imports"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/jobs-control.md"
+                },
+                {
+                  "key": "board_id",
+                  "type": "text",
+                  "value": "{{boardId}}"
+                },
+                {
+                  "key": "archive_completed",
+                  "type": "text",
+                  "value": "false",
+                  "description": "true arquiva os cartões de tarefas - [x]"
+                },
+                {
+                  "key": "on_existing",
+                  "type": "text",
+                  "value": "skip",
+                  "description": "skip (padrão) ou update"
+                }
+              ]
+            },
+            "description": "**Escreve no Trello.** Cria listas, cartões e checklists. Reenviar o mesmo arquivo não duplica cartões."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    const data = pm.response.json();",
+                  "    pm.test('Importação sem erros', () => pm.expect(data.status).to.eql('success'));",
+                  "    console.log(JSON.stringify(data.summary, null, 2));",
+                  "    if (data.errors && data.errors.length) console.warn(data.errors);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar relatório BP Tech (update + arquivar)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/imports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "imports"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/relatorio-rede-bptech.md"
+                },
+                {
+                  "key": "board_id",
+                  "type": "text",
+                  "value": "{{boardId}}"
+                },
+                {
+                  "key": "archive_completed",
+                  "type": "text",
+                  "value": "true"
+                },
+                {
+                  "key": "on_existing",
+                  "type": "text",
+                  "value": "update"
+                }
+              ]
+            },
+            "description": "**Escreve no Trello.** Importa os achados do relatório na lista TODO, com a severidade como etiqueta. Com `update`, reimportar uma nova versão atualiza descrição, checklist e etiquetas dos cartões existentes (mesmo que já tenham sido movidos para outra coluna); com `archive_completed`, os achados resolvidos são arquivados."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    const data = pm.response.json();",
+                  "    pm.test('Importação sem erros', () => pm.expect(data.status).to.eql('success'));",
+                  "    console.log(JSON.stringify(data.summary, null, 2));",
+                  "    if (data.errors && data.errors.length) console.warn(data.errors);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Erros",
+      "item": [
+        {
+          "name": "Arquivo inválido (422)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "requirements.txt"
+                }
+              ]
+            },
+            "description": "Arquivo que não é `.md`/`.markdown`: a API rejeita a requisição inteira com `invalid_file` e lista os problemas em `details`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Código invalid_file', () => pm.expect(pm.response.json().error.code).to.eql('invalid_file'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quadro inexistente (404)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "examples/jobs-control.md"
+                },
+                {
+                  "key": "board_id",
+                  "type": "text",
+                  "value": "aaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ]
+            },
+            "description": "Quadro que não existe ou ao qual o token não tem acesso."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Código trello_not_found', () => pm.expect(pm.response.json().error.code).to.eql('trello_not_found'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
