@@ -160,15 +160,15 @@ Logo abaixo da linha do cartão, indentada com 2 espaços, nesta ordem e uma inf
 2. Revise antes de importar:
 
 ```bash
-curl -F "files=@bptech-rede-conectividade.md" -F "board_id=SEU_BOARD_ID" -F "on_existing=update" http://localhost:8000/preview
+curl -F "files=@bptech-rede-conectividade.md" -F "board_id=SEU_BOARD_ID" -F "on_existing=update" -F "completed_list=Concluido" http://localhost:8000/preview
 ```
 
-Confira em `summary` os campos `cards_to_create`, `cards_to_update`, `cards_to_skip` e `labels_to_create`, e veja se `warnings` está vazio.
+Confira em `summary` os campos `cards_to_create`, `cards_to_update`, `cards_to_skip`, `labels_to_create` e `cards_to_move_to_completed`, e veja se `warnings` está vazio.
 
 3. Importe:
 
 ```bash
-curl -F "files=@bptech-rede-conectividade.md" -F "board_id=SEU_BOARD_ID" -F "on_existing=update" -F "archive_completed=true" http://localhost:8000/imports
+curl -F "files=@bptech-rede-conectividade.md" -F "board_id=SEU_BOARD_ID" -F "on_existing=update" -F "completed_list=Concluido" http://localhost:8000/imports
 ```
 
-Na versão seguinte do relatório, gere o `.md` de novo anexando o anterior e importe com os mesmos parâmetros. Os achados que avançaram têm a checklist e a descrição atualizadas, mesmo que você já os tenha movido para outra coluna. Os resolvidos são arquivados e os novos são criados em TODO.
+Na versão seguinte do relatório, gere o `.md` de novo anexando o anterior e importe com os mesmos parâmetros. Os achados que avançaram têm a checklist e a descrição atualizadas, mesmo que você já os tenha movido para outra coluna. Os resolvidos vão para a lista **Concluido**, saindo de qualquer coluna em que estejam, e os novos são criados em TODO. Se preferir arquivar os resolvidos, troque `completed_list=Concluido` por `archive_completed=true`; as duas opções não podem ser usadas juntas.
