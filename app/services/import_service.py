@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from app.clients.trello import TrelloClient
-from app.core.errors import TrelloAuthError, TrelloError, TrelloNotConfiguredError
+from app.core.errors import InvalidOptionsError, TrelloAuthError, TrelloError, TrelloNotConfiguredError
 from app.parsers.markdown import MarkdownParser
 from app.schemas.imports import (
     CardAction,
@@ -67,10 +67,27 @@ class BoardState:
     lists: dict[str, str | None] = field(default_factory=dict)  # nome normalizado -> id (None = planejada)
     cards: dict[str, TrelloCard | None] = field(default_factory=dict)  # fingerprint -> cartão (None = planejado)
     labels: dict[str, str | None] = field(default_factory=dict)  # nome normalizado -> id (None = planejada)
+    list_names: list[str] = field(default_factory=list)  # nomes originais das listas abertas
 
     @staticmethod
     def key(name: str) -> str:
-        return " ".join(name.split()).casefold()
+        """Normaliza nomes: ignora maiúsculas, espaços repetidos e acentos ("Concluído" == "concluido")."""
+        plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+        return " ".join(plain.split()).casefold()
+
+    def completed_list_id(self, options: ImportOptions) -> str | None:
+        """ID da lista de concluídos. Ela precisa existir no quadro (não é criada automaticamente)."""
+        if not options.completed_list:
+            return None
+        if options.archive_completed:
+            raise InvalidOptionsError("Use `archive_completed` ou `completed_list`, não os dois.")
+        list_id = self.lists.get(self.key(options.completed_list))
+        if not list_id:
+            raise InvalidOptionsError(
+                f"Lista '{options.completed_list}' não encontrada no quadro.",
+                details={"available_lists": sorted(self.list_names)},
+            )
+        return list_id
 
     @classmethod
     async def load(cls, client: TrelloClient, board_id: str) -> "BoardState":
@@ -78,6 +95,7 @@ class BoardState:
         state = cls()
         for trello_list in await client.get_lists(board_id):
             state.lists.setdefault(cls.key(trello_list.name), trello_list.id)
+            state.list_names.append(trello_list.name)
         for card in await client.get_cards(board_id):
             if fingerprint := extract_fingerprint(card.desc):
                 state.cards.setdefault(fingerprint, card)
@@ -105,11 +123,15 @@ class ImportService:
         files: Sequence[MarkdownFile],
         board_id: str | None = None,
         on_existing: ExistingCardPolicy = ExistingCardPolicy.SKIP,
+        completed_list: str | None = None,
     ) -> PreviewResponse:
         documents = self.parse(files)
         state = await BoardState.load(self._require_client(), board_id) if board_id else None
+        completed_list_id = (
+            state.completed_list_id(ImportOptions(completed_list=completed_list)) if state is not None else None
+        )
 
-        previews = [self._preview_document(doc, state, on_existing) for doc in documents]
+        previews = [self._preview_document(doc, state, on_existing, completed_list_id) for doc in documents]
         cards = [card for f in previews for lst in f.lists for card in lst.cards]
         summary = PreviewSummary(
             files=len(previews),
@@ -124,6 +146,8 @@ class ImportService:
             summary.cards_to_create = sum(c.action == CardAction.CREATE for c in cards)
             summary.cards_to_update = sum(c.action == CardAction.UPDATE for c in cards)
             summary.cards_to_skip = sum(c.action == CardAction.SKIP for c in cards)
+            if completed_list_id:
+                summary.cards_to_move_to_completed = sum(bool(c.move_to_completed) for c in cards)
             summary.labels_to_create = len(
                 {BoardState.key(label) for c in cards for label in c.labels} - set(state.labels)
             )
@@ -131,7 +155,10 @@ class ImportService:
 
     @staticmethod
     def _preview_document(
-        document: ParsedDocument, state: BoardState | None, on_existing: ExistingCardPolicy
+        document: ParsedDocument,
+        state: BoardState | None,
+        on_existing: ExistingCardPolicy,
+        completed_list_id: str | None = None,
     ) -> FilePreview:
         preview = FilePreview.model_validate(document.model_dump())
         if state is None:
@@ -144,7 +171,15 @@ class ImportService:
                 lst.action = ListAction.CREATE
                 state.lists[key] = None
             for card in lst.cards:
+                existing = state.cards.get(card.fingerprint)
                 _plan_card(card, state, on_existing)
+                if completed_list_id and card.completed:
+                    card.move_to_completed = card.action == CardAction.CREATE or (
+                        card.action == CardAction.UPDATE
+                        and existing is not None
+                        and not existing.closed
+                        and existing.id_list != completed_list_id
+                    )
         return preview
 
     # --- Importação ------------------------------------------------------------------------
@@ -154,8 +189,9 @@ class ImportService:
         documents = self.parse(files)
         # Falhas aqui (credencial inválida, quadro inexistente) abortam antes de qualquer escrita.
         state = await BoardState.load(client, board_id)
+        completed_list_id = state.completed_list_id(options)  # valida a opção antes de escrever
 
-        run = _ImportRun(client, board_id, state, options)
+        run = _ImportRun(client, board_id, state, options, completed_list_id)
         logger.info("import_started", extra={"board_id": board_id, "files": len(documents)})
         await run.execute(documents)
         response = run.response(documents)
@@ -193,8 +229,16 @@ class _ImportRun:
     falhou, e uma nova importação dos mesmos arquivos completa apenas o que falta.
     """
 
-    def __init__(self, client: TrelloClient, board_id: str, state: BoardState, options: ImportOptions) -> None:
+    def __init__(
+        self,
+        client: TrelloClient,
+        board_id: str,
+        state: BoardState,
+        options: ImportOptions,
+        completed_list_id: str | None = None,
+    ) -> None:
         self.client = client
+        self.completed_list_id = completed_list_id
         self.board_id = board_id
         self.state = state
         self.options = options
@@ -273,9 +317,12 @@ class _ImportRun:
         result = self._result(filename, list_name, card, CardStatus.CREATED)
         self.cards.append(result)
         label_ids = await self._ensure_labels(card, result)
+        # Tarefa já concluída no Markdown nasce direto na lista de concluídos, se configurada.
+        to_completed = bool(card.completed and self.completed_list_id)
+        target_list_id = self.completed_list_id if to_completed and self.completed_list_id else list_id
         try:
             created = await self.client.create_card(
-                list_id, card.title, with_marker(card.description, card.fingerprint), label_ids
+                target_list_id, card.title, with_marker(card.description, card.fingerprint), label_ids
             )
         except TrelloError as exc:
             result.status = CardStatus.FAILED
@@ -286,6 +333,10 @@ class _ImportRun:
         self.summary.card_labels_added += len(label_ids)
         self.state.cards[card.fingerprint] = created
         result.card_id, result.url = created.id, created.url
+        if to_completed:
+            result.moved_to_completed = True
+            result.list_name = self.options.completed_list or list_name
+            self.summary.cards_moved_to_completed += 1
 
         await self._sync_checklist(created.id, card, result, existing=[])
         if card.completed and self.options.archive_completed:
@@ -315,6 +366,13 @@ class _ImportRun:
         await self._sync_checklist(existing.id, card, result, existing=checklists)
         if card.completed and self.options.archive_completed and not existing.closed:
             await self._archive(existing.id, card, result)
+        if (
+            card.completed
+            and self.completed_list_id
+            and not existing.closed
+            and existing.id_list != self.completed_list_id
+        ):
+            await self._move_to_completed(existing, card, result)
 
     async def _sync_checklist(
         self, card_id: str, card: ParsedCard, result: CardResult, existing: list[TrelloChecklist]
@@ -380,6 +438,19 @@ class _ImportRun:
                 continue
             existing.id_labels.append(label_id)
             self.summary.card_labels_added += 1
+
+    async def _move_to_completed(self, existing: TrelloCard, card: ParsedCard, result: CardResult) -> None:
+        """Move o cartão concluído para a lista de concluídos (ex.: de EM ANDAMENTO para Concluido)."""
+        assert self.completed_list_id
+        try:
+            await self.client.update_card(existing.id, idList=self.completed_list_id, pos="bottom")
+        except TrelloError as exc:
+            result.status = CardStatus.PARTIAL
+            self._record(exc, result.file, "move_card", result.list_name, card.title)
+            return
+        existing.id_list = self.completed_list_id
+        result.moved_to_completed = True
+        self.summary.cards_moved_to_completed += 1
 
     async def _archive(self, card_id: str, card: ParsedCard, result: CardResult) -> None:
         try:
