@@ -230,6 +230,11 @@
                   "key": "on_existing",
                   "type": "text",
                   "value": "update"
+                },
+                {
+                  "key": "completed_list",
+                  "type": "text",
+                  "value": "Concluido"
                 }
               ]
             },
@@ -296,6 +301,13 @@
                   "type": "text",
                   "value": "skip",
                   "description": "skip (padrão) ou update"
+                },
+                {
+                  "key": "completed_list",
+                  "type": "text",
+                  "value": "Concluido",
+                  "disabled": true,
+                  "description": "Ative para mover as tarefas - [x] para esta lista em vez de arquivá-las"
                 }
               ]
             },
@@ -320,7 +332,7 @@
           ]
         },
         {
-          "name": "Importar relatório BP Tech (update + arquivar)",
+          "name": "Importar relatório BP Tech (update + Concluido)",
           "request": {
             "method": "POST",
             "url": {
@@ -346,18 +358,19 @@
                   "value": "{{boardId}}"
                 },
                 {
-                  "key": "archive_completed",
-                  "type": "text",
-                  "value": "true"
-                },
-                {
                   "key": "on_existing",
                   "type": "text",
                   "value": "update"
+                },
+                {
+                  "key": "completed_list",
+                  "type": "text",
+                  "value": "Concluido",
+                  "description": "Lista existente para onde vão as tarefas concluídas (não combine com archive_completed)"
                 }
               ]
             },
-            "description": "**Escreve no Trello.** Importa os achados do relatório na lista TODO, com a severidade como etiqueta. Com `update`, reimportar uma nova versão atualiza descrição, checklist e etiquetas dos cartões existentes (mesmo que já tenham sido movidos para outra coluna); com `archive_completed`, os achados resolvidos são arquivados."
+            "description": "**Escreve no Trello.** Importa os achados do relatório: novos em TODO, com a severidade como etiqueta. Com `update`, reimportar uma nova versão atualiza descrição, checklist e etiquetas dos cartões existentes, em qualquer coluna. Com `completed_list=Concluido`, os achados resolvidos vão para a lista Concluido."
           },
           "event": [
             {
