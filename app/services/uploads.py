@@ -18,12 +18,10 @@ class MarkdownFile:
 
 
 def _safe_filename(raw: str | None) -> str:
-    # Descarta qualquer caminho enviado pelo cliente (ex.: "../../x.md" ou "C:\\x.md").
     return PurePosixPath((raw or "").replace("\\", "/")).name.strip()
 
 
 def validate_markdown(filename: str, data: bytes, max_bytes: int) -> MarkdownFile:
-    """Valida um arquivo individual. Lança ``InvalidFileError``/``FileTooLargeError``."""
     if not filename:
         raise InvalidFileError("Arquivo enviado sem nome.")
     if PurePosixPath(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
@@ -42,8 +40,6 @@ def validate_markdown(filename: str, data: bytes, max_bytes: int) -> MarkdownFil
 
 
 async def read_markdown_files(files: list[UploadFile], settings: Settings) -> list[MarkdownFile]:
-    """Lê e valida todos os uploads. Rejeita a requisição inteira se algum arquivo for inválido,
-    para que o usuário corrija antes de revisar/importar."""
     if not files:
         raise InvalidFileError("Envie ao menos um arquivo Markdown.")
     if len(files) > settings.max_files_per_request:
@@ -55,7 +51,6 @@ async def read_markdown_files(files: list[UploadFile], settings: Settings) -> li
     seen: set[str] = set()
     for upload in files:
         filename = _safe_filename(upload.filename)
-        # Lê no máximo limite+1 bytes para detectar excesso sem carregar arquivos enormes.
         data = await upload.read(settings.max_upload_bytes + 1)
         try:
             markdown = validate_markdown(filename, data, settings.max_upload_bytes)
