@@ -11,6 +11,8 @@ from tests.fake_trello import FakeTrello
 
 TEST_KEY = "test-api-key-123"
 TEST_TOKEN = "test-token-456"
+TEST_API_TOKEN = "api-token-for-tests-0123456789abcdef"
+AUTH_HEADERS = {"Authorization": f"Bearer {TEST_API_TOKEN}"}
 
 
 @pytest.fixture
@@ -50,6 +52,7 @@ def settings() -> Settings:
         _env_file=None,  # type: ignore[call-arg]
         trello_api_key=TEST_KEY,
         trello_token=TEST_TOKEN,
+        api_token=TEST_API_TOKEN,
         max_upload_bytes=2048,
         max_files_per_request=3,
     )
@@ -60,12 +63,12 @@ def api(settings: Settings, fake_trello: FakeTrello, sleeps: list[float]) -> Ite
     app = create_app(settings)
     client = build_client(fake_trello, sleeps)
     app.dependency_overrides[get_optional_trello_client] = lambda: client
-    with TestClient(app) as test_client:
+    with TestClient(app, headers=AUTH_HEADERS) as test_client:
         yield test_client
 
 
 @pytest.fixture
 def api_without_trello() -> Iterator[TestClient]:
-    app = create_app(Settings(_env_file=None, trello_api_key=None, trello_token=None))  # type: ignore[call-arg]
-    with TestClient(app) as test_client:
+    app = create_app(Settings(_env_file=None, trello_api_key=None, trello_token=None, api_token=TEST_API_TOKEN))  # type: ignore[call-arg]
+    with TestClient(app, headers=AUTH_HEADERS) as test_client:
         yield test_client

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Response
 from app import __version__
 from app.api.routes import router
 from app.clients.trello import TrelloClient
+from app.core.auth import TokenAuthMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -40,6 +41,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="TaskPort", version=__version__, description=DESCRIPTION, lifespan=lifespan)
     app.state.settings = settings
     register_exception_handlers(app)
+
+    if not settings.api_token_configured:
+        logger.warning("api_token_not_configured", extra={"hint": "defina API_TOKEN (rotas protegidas: 503)"})
+    app.add_middleware(
+        TokenAuthMiddleware,
+        token=settings.api_token.get_secret_value() if settings.api_token else None,
+    )
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
