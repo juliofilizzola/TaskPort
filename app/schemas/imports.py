@@ -29,6 +29,7 @@ class CardAction(StrEnum):
 class ImportOptions(BaseModel):
     archive_completed: bool = False
     on_existing: ExistingCardPolicy = ExistingCardPolicy.SKIP
+    completed_list: str | None = None
 
 
 # --- Pré-visualização ------------------------------------------------------------------------
@@ -37,6 +38,9 @@ class ImportOptions(BaseModel):
 class CardPreview(ParsedCard):
     action: CardAction | None = Field(default=None, description="Preenchido somente quando board_id é informado.")
     existing_card_id: str | None = None
+    move_to_completed: bool | None = Field(
+        default=None, description="True se o cartão concluído irá para a lista `completed_list`."
+    )
 
 
 class ListPreview(ParsedList):
@@ -61,6 +65,7 @@ class PreviewSummary(BaseModel):
     cards_to_create: int | None = None
     cards_to_update: int | None = None
     cards_to_skip: int | None = None
+    cards_to_move_to_completed: int | None = None
 
 
 class PreviewResponse(BaseModel):
@@ -104,6 +109,7 @@ class CardResult(BaseModel):
     card_id: str | None = None
     url: str | None = None
     archived: bool = False
+    moved_to_completed: bool = False
 
 
 class FileResult(BaseModel):
@@ -125,6 +131,7 @@ class ImportSummary(BaseModel):
     checklist_items_updated: int = 0
     labels_created: int = 0
     card_labels_added: int = 0
+    cards_moved_to_completed: int = 0
     cards_archived: int = 0
     errors: int = 0
 
