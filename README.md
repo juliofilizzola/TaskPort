@@ -101,7 +101,7 @@ A imagem roda com usuário sem privilégios e possui `HEALTHCHECK` em `/health`.
 | `## Título` | Lista. Reutiliza uma lista aberta de mesmo nome (sem diferenciar maiúsculas) |
 | `###`, `####`… | Contexto hierárquico, registrado na descrição (`Seção: Backend › Auth`) |
 | `- [ ] tarefa` | Cartão pendente |
-| `- [x] tarefa` | Cartão concluído (nota na descrição; arquivado se `archive_completed=true`) |
+| `- [x] tarefa` | Cartão concluído (nota na descrição; arquivado se `archive_completed=true` ou levado para a lista `completed_list`) |
 | Checkbox aninhado | Item da checklist **Subtarefas** (marcado ou não). Níveis mais profundos recebem o prefixo `↳` |
 | Texto sob a tarefa | Descrição do cartão (parágrafos, listas comuns, blocos de código) |
 | `Etiquetas: a, b` sob a tarefa | Etiquetas do cartão (aceita também `**Etiquetas:**` e `Labels:`). A linha não entra na descrição. Etiquetas inexistentes são criadas no quadro: Crítica vermelha, Alta laranja, Média amarela, Baixa verde, Informativo azul e as demais em azul-claro |
@@ -160,6 +160,7 @@ Campos de formulário (`multipart/form-data`) de `/preview` e `/imports`:
 | `files` | sim | Um ou mais arquivos `.md`/`.markdown` (UTF-8) |
 | `board_id` | em `/imports` | ID (24 caracteres) ou shortLink (8) do quadro. Em `/preview`, opcional: se informado, o quadro é apenas **lido** para indicar o que será criado, reutilizado ou ignorado |
 | `archive_completed` | não (`false`) | Arquiva os cartões de tarefas `- [x]` (só em `/imports`) |
+| `completed_list` | não | Nome de uma lista **existente** (ex.: `Concluido`; maiúsculas e acentos são ignorados) para onde vão as tarefas `- [x]`. Cartões novos já nascem nela; com `on_existing=update`, cartões existentes são movidos de qualquer coluna (EM ANDAMENTO, STAND BY etc.). Tarefas pendentes nunca são movidas. Não pode ser combinado com `archive_completed`. Em `/preview`, mostra `move_to_completed` por cartão e `cards_to_move_to_completed` no resumo |
 | `on_existing` | não (`skip`) | Tarefas já importadas: `skip` ignora; `update` sincroniza a descrição e o estado/itens da checklist |
 
 ### Postman
@@ -244,7 +245,7 @@ curl -F "files=@examples/jobs-control.md" -F "files=@examples/sem-headings.md" -
     "files_processed": 1, "lists_created": 3, "lists_reused": 0,
     "cards_created": 4, "cards_updated": 0, "cards_skipped": 0, "cards_failed": 1,
     "checklists_created": 0, "checklist_items_created": 0, "checklist_items_updated": 0,
-    "labels_created": 0, "card_labels_added": 0, "cards_archived": 0, "errors": 1
+    "labels_created": 0, "card_labels_added": 0, "cards_moved_to_completed": 0, "cards_archived": 0, "errors": 1
   },
   "files": [{ "filename": "jobs-control.md", "content_sha256": "a052222d…", "cards": 5 }],
   "cards": [
@@ -269,6 +270,7 @@ Formato: `{"error": {"code": "...", "message": "...", "details": ...}}`.
 | 404 | `trello_not_found` | Quadro inexistente ou inacessível |
 | 413 | `file_too_large`, `too_many_files` | Limites de upload excedidos |
 | 422 | `invalid_file` | Extensão inválida, arquivo vazio, binário ou não UTF-8 (lista todos os problemas em `details`) |
+| 422 | `invalid_options` | `completed_list` não existe no quadro (as listas disponíveis vêm em `details`) ou foi combinada com `archive_completed` |
 | 502 | `trello_auth_failed`, `trello_error` | Credenciais inválidas ou requisição rejeitada pelo Trello |
 | 503 | `trello_not_configured`, `trello_rate_limited` | Credenciais ausentes ou rate limit persistente |
 | 504 | `trello_unavailable` | Timeout, falha de conexão ou 5xx do Trello |
@@ -301,7 +303,7 @@ app/
   parsers/    tokenização por regras + montagem da estrutura
   clients/    cliente HTTP do Trello (auth, timeout, retries, mapeamento de erros)
   core/       configuração, logs JSON com redação de segredos, erros
-tests/        parser, uploads, duplicidade, cliente, serviço e API (89 testes)
+tests/        parser, uploads, duplicidade, cliente, serviço e API (98 testes)
 examples/     arquivos Markdown de exemplo
 ```
 
@@ -309,7 +311,7 @@ examples/     arquivos Markdown de exemplo
 
 - **Checklist única:** todas as subtarefas vão para a checklist "Subtarefas". O Trello não tem checklists aninhadas: a hierarquia é indicada pelo prefixo `↳`.
 - **Renomear uma tarefa cria outro cartão:** alterar o título, a seção (`###`) ou o projeto (`#`) produz outro fingerprint, e o cartão antigo permanece no quadro. Mudar a lista (`##`) não.
-- **Lista só na criação:** a lista do Markdown é usada apenas ao criar o cartão. O modo `update` não move cartões entre listas.
+- **Lista só na criação:** a lista do Markdown é usada apenas ao criar o cartão. O modo `update` não move cartões entre listas, exceto tarefas concluídas quando `completed_list` é informado. Reabrir uma tarefa (`[x]` → `[ ]`) não tira o cartão da lista de concluídos.
 - **Etiquetas só são adicionadas:** o modo `update` adiciona as etiquetas que faltam, mas não remove etiquetas do cartão.
 - **Sem remoção:** o modo `update` não remove cartões nem itens de checklist que deixaram de existir no Markdown, e não desarquiva cartões.
 - **Marcador visível:** o marcador `taskport:…` fica visível no fim da descrição. Removê-lo manualmente faz a tarefa ser importada de novo.
