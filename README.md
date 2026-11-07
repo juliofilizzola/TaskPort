@@ -9,6 +9,28 @@ Fluxo: configurar credenciais → escolher o quadro (`GET /boards`) → enviar o
 - Python 3.12+ **ou** Docker
 - Uma API key e um token do Trello
 
+## Autenticação da API
+
+Todas as rotas exigem o token de acesso da própria API no cabeçalho `Authorization`. Não há login: o token é um segredo fixo definido em `API_TOKEN`.
+
+Gere um token com pelo menos 32 caracteres, sem espaços:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Defina `API_TOKEN` no `.env` e envie-o em cada requisição:
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8000/boards
+```
+
+- Sem o cabeçalho, com formato inválido ou com token errado: `401 unauthorized`.
+- Sem `API_TOKEN` configurado: as rotas protegidas respondem `503 auth_not_configured` (a API não fica aberta por engano).
+- Público (sem token): `/health`, `/docs`, `/redoc` e `/openapi.json`.
+
+O token é comparado em tempo constante e nunca aparece nos logs.
+
 ## Configuração das credenciais
 
 1. Acesse <https://trello.com/power-ups/admin>, crie (ou abra) uma integração e copie a **API key**.
@@ -16,11 +38,12 @@ Fluxo: configurar credenciais → escolher o quadro (`GET /boards`) → enviar o
 3. Copie `.env.example` para `.env` e preencha:
 
 ```env
+API_TOKEN=gerado-acima
 TRELLO_API_KEY=sua-api-key
 TRELLO_TOKEN=seu-token
 ```
 
-As credenciais são lidas apenas de variáveis de ambiente (ou do `.env`), enviadas ao Trello somente no cabeçalho `Authorization` (nunca na URL) e removidas de qualquer log. Nenhum endpoint as retorna.
+As credenciais do Trello são lidas apenas de variáveis de ambiente (ou do `.env`), enviadas ao Trello somente no cabeçalho `Authorization` (nunca na URL) e removidas de qualquer log. Nenhum endpoint as retorna.
 
 Variáveis opcionais:
 
