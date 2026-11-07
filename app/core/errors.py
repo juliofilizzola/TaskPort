@@ -34,6 +34,11 @@ class TooManyFilesError(AppError):
     code = "too_many_files"
 
 
+class InvalidOptionsError(AppError):
+    status_code = 422
+    code = "invalid_options"
+
+
 class TrelloNotConfiguredError(AppError):
     status_code = 503
     code = "trello_not_configured"

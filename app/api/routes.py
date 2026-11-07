@@ -17,6 +17,14 @@ from app.services.uploads import read_markdown_files
 router = APIRouter()
 
 FilesField = Annotated[list[UploadFile], File(description="Um ou mais arquivos .md / .markdown (UTF-8).")]
+CompletedListField = Annotated[
+    str | None,
+    Form(
+        max_length=200,
+        description="Nome de uma lista existente (ex.: `Concluido`) para onde vão as tarefas concluídas (`- [x]`). "
+        "Cartões novos já nascem nela; existentes são movidos. Não combine com `archive_completed`.",
+    ),
+]
 OnExistingField = Annotated[
     ExistingCardPolicy,
     Form(description="O que fazer com tarefas já importadas: `skip` (padrão) ou `update` (sincroniza descrição e checklist)."),
@@ -24,7 +32,10 @@ OnExistingField = Annotated[
 
 _ERRORS = {
     413: {"description": "Arquivo(s) acima do limite ou excesso de arquivos."},
-    422: {"description": "Arquivo inválido (extensão, codificação, vazio ou binário)."},
+    422: {
+        "description": "Arquivo inválido (extensão, codificação, vazio ou binário) ou opções inválidas "
+        "(`completed_list` inexistente ou combinada com `archive_completed`)."
+    },
     502: {"description": "Erro retornado pelo Trello (ex.: credenciais inválidas)."},
     503: {"description": "Trello não configurado ou limite de requisições excedido."},
     504: {"description": "Trello indisponível ou tempo limite excedido."},
@@ -66,9 +77,10 @@ async def preview_import(
     service: ImportServiceDep,
     board_id: Annotated[str | None, Form(pattern=BOARD_ID_PATTERN, description="Quadro de destino (opcional).")] = None,
     on_existing: OnExistingField = ExistingCardPolicy.SKIP,
+    completed_list: CompletedListField = None,
 ) -> PreviewResponse:
     markdown_files = await read_markdown_files(files, settings)
-    return await service.preview(markdown_files, board_id, on_existing)
+    return await service.preview(markdown_files, board_id, on_existing, completed_list or None)
 
 
 @router.post(
@@ -89,7 +101,10 @@ async def create_import(
     service: ImportServiceDep,
     archive_completed: Annotated[bool, Form(description="Arquivar cartões de tarefas concluídas (`- [x]`).")] = False,
     on_existing: OnExistingField = ExistingCardPolicy.SKIP,
+    completed_list: CompletedListField = None,
 ) -> ImportResponse:
     markdown_files = await read_markdown_files(files, settings)
-    options = ImportOptions(archive_completed=archive_completed, on_existing=on_existing)
+    options = ImportOptions(
+        archive_completed=archive_completed, on_existing=on_existing, completed_list=completed_list or None
+    )
     return await service.run_import(markdown_files, board_id, options)
