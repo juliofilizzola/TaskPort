@@ -1,5 +1,3 @@
-"""Regras de negócio da pré-visualização e da importação para o Trello."""
-
 import logging
 import unicodedata
 from collections.abc import Sequence
@@ -35,7 +33,6 @@ logger = logging.getLogger("taskport.import")
 
 CHECKLIST_NAME = "Subtarefas"
 
-# Cores das etiquetas criadas automaticamente (nome normalizado, sem acento).
 LABEL_COLORS = {
     "critica": "red",
     "critico": "red",
@@ -116,7 +113,6 @@ class ImportService:
             assign_fingerprints(document)
         return documents
 
-    # --- Pré-visualização (somente leitura) ------------------------------------------------
 
     async def preview(
         self,
@@ -182,14 +178,12 @@ class ImportService:
                     )
         return preview
 
-    # --- Importação ------------------------------------------------------------------------
 
     async def run_import(self, files: Sequence[MarkdownFile], board_id: str, options: ImportOptions) -> ImportResponse:
         client = self._require_client()
         documents = self.parse(files)
-        # Falhas aqui (credencial inválida, quadro inexistente) abortam antes de qualquer escrita.
         state = await BoardState.load(client, board_id)
-        completed_list_id = state.completed_list_id(options)  # valida a opção antes de escrever
+        completed_list_id = state.completed_list_id(options)
 
         run = _ImportRun(client, board_id, state, options, completed_list_id)
         logger.info("import_started", extra={"board_id": board_id, "files": len(documents)})
@@ -277,8 +271,6 @@ class _ImportRun:
             cards=self.cards,
             errors=self.errors,
         )
-
-    # --- etapas ----------------------------------------------------------------------------
 
     async def _import_document(self, document: ParsedDocument) -> None:
         for lst in document.lists:
@@ -496,5 +488,4 @@ class _ImportRun:
             extra={"board_id": self.board_id, "operation": operation, "file": filename, "error_code": exc.code},
         )
         if isinstance(exc, TrelloAuthError):
-            # Sem credenciais válidas nenhuma operação seguinte terá sucesso.
             raise _Aborted from exc
